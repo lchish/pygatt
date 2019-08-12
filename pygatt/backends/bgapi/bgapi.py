@@ -70,6 +70,7 @@ class AdvertisingAndScanInfo(object):
         self.name = ""
         self.address = ""
         self.rssi = None
+        self.raw_data = None
         self.packet_data = {
             # scan_response_packet_type[xxx]: data_dictionary,
         }
@@ -368,13 +369,15 @@ class BGAPIBackend(BLEBackend):
         self.expect(ResponsePacketType.gap_end_procedure)
 
         devices = []
-        for address, info in self._devices_discovered.items():
-            devices.append({
-                'address': address,
-                'name': info.name,
-                'rssi': info.rssi,
-                'packet_data': info.packet_data
-            })
+        for address, array in self._devices_discovered.items():
+            for info in array:
+                devices.append({
+                    'address': address,
+                    'name': info.name,
+                    'rssi': info.rssi,
+                    'packet_data': info.packet_data,
+                    'raw_data': info.raw_data
+                })
         log.info("Discovered %d devices: %s", len(devices), devices)
         self._devices_discovered = {}
         return devices
@@ -540,7 +543,10 @@ class BGAPIBackend(BLEBackend):
         for b in data:
             if bytes_left_in_field == 0:
                 # New field
-                bytes_left_in_field = b
+                if b == 0x1C:
+                    bytes_left_in_field = 0x1B
+                else:
+                    bytes_left_in_field = b
                 field_value = []
             else:
                 field_value.append(b)
@@ -764,11 +770,8 @@ class BGAPIBackend(BLEBackend):
         packet_type = constants.scan_response_packet_type[args['packet_type']]
         address = bgapi_address_to_hex(args['sender'])
         name, data_dict = self._scan_rsp_data(args['data'])
-
         # Store device information
-        if address not in self._devices_discovered:
-            self._devices_discovered[address] = AdvertisingAndScanInfo()
-        dev = self._devices_discovered[address]
+        dev = AdvertisingAndScanInfo()
         if dev.name == "":
             dev.name = name
         if dev.address == "":
@@ -777,6 +780,11 @@ class BGAPIBackend(BLEBackend):
                 len(dev.packet_data[packet_type]) < len(data_dict)):
             dev.packet_data[packet_type] = data_dict
         dev.rssi = args['rssi']
+        dev.raw_data = args['data']
+        if address not in self._devices_discovered:
+            self._devices_discovered[address] = []
+        self._devices_discovered[address].append(dev)
+
         log.debug("Received a scan response from %s with rssi=%d dBM "
                   "and data=%s", address, args['rssi'], data_dict)
 
