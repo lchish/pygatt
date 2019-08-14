@@ -369,8 +369,7 @@ class BGAPIBackend(BLEBackend):
         self.expect(ResponsePacketType.gap_end_procedure)
 
         devices = []
-        for address, array in self._devices_discovered.items():
-            for info in array:
+        for address, info in self._devices_discovered.items():
                 devices.append({
                     'address': address,
                     'name': info.name,
@@ -543,10 +542,7 @@ class BGAPIBackend(BLEBackend):
         for b in data:
             if bytes_left_in_field == 0:
                 # New field
-                if b == 0x1C:
-                    bytes_left_in_field = 0x1B
-                else:
-                    bytes_left_in_field = b
+                bytes_left_in_field = b
                 field_value = []
             else:
                 field_value.append(b)
@@ -770,8 +766,11 @@ class BGAPIBackend(BLEBackend):
         packet_type = constants.scan_response_packet_type[args['packet_type']]
         address = bgapi_address_to_hex(args['sender'])
         name, data_dict = self._scan_rsp_data(args['data'])
+
         # Store device information
-        dev = AdvertisingAndScanInfo()
+        if address not in self._devices_discovered:
+            self._devices_discovered[address] = AdvertisingAndScanInfo()
+        dev = self._devices_discovered[address]
         if dev.name == "":
             dev.name = name
         if dev.address == "":
@@ -781,10 +780,6 @@ class BGAPIBackend(BLEBackend):
             dev.packet_data[packet_type] = data_dict
         dev.rssi = args['rssi']
         dev.raw_data = args['data']
-        if address not in self._devices_discovered:
-            self._devices_discovered[address] = []
-        self._devices_discovered[address].append(dev)
-
         log.debug("Received a scan response from %s with rssi=%d dBM "
                   "and data=%s", address, args['rssi'], data_dict)
 
